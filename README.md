@@ -6,7 +6,7 @@ Il progetto 'Flower-detect' consiste nella classificazione di 5 tipologie di fio
 - Girasole;
 - Tulipano.
 
-Descrizione file e directories:
+# Descrizione file e directories:
 - src/ contiene il codice sorgente Python;
 - doc/ contiene la documentazione del progetto;
 - datasets/ contiene le immagini del dataset utilizzato;
