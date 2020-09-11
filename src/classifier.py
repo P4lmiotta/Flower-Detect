@@ -9,6 +9,7 @@ import dask.array as da
 
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import src.extract_features
 import src.data_augmentation
@@ -17,9 +18,11 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import MinMaxScaler
 
 from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.naive_bayes import GaussianNB
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import classification_report, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, \
+                            classification_report
 
 
 class Classifier:
@@ -59,7 +62,7 @@ class Classifier:
     def normalize_features(self):
         scaler = MinMaxScaler(feature_range=(0, 1))
 
-        dask_array_compute = np.array(self.X)
+        dask_array_compute = da.asarray(self.X) #np.array(self.X)
         rescaled_features = scaler.fit_transform(dask_array_compute)
 
         target = self.le.fit_transform(self.Y)
@@ -102,16 +105,16 @@ class Classifier:
 
     # definisco i migliori hyperparameters da passare nel modello ML utilizzato
     def define_hyperparameters(self):
-        hyperparameters_grid_rf = {
+        hyperparameters_grid_tree = {
             'bootstrap': [True],
             'max_depth': [20],
             'max_features': ['auto'],
-            'min_samples_leaf': [3],
+            'min_samples_leaf': [2, 3],
             'min_samples_split': [4],
-            'n_estimators': [800]
+            'n_estimators': [200, 500, 800]
         }
 
-        return hyperparameters_grid_rf
+        return hyperparameters_grid_tree
 
     def training_test(self):
         global_features, global_labels = self.feature_to_string()
@@ -123,15 +126,31 @@ class Classifier:
         # prendo i parametri per il GridSearchCV
         param_grid = self.define_hyperparameters()
 
+        # creo il modello - Gaussian NB
+        gnb = GaussianNB()
+
+        # addestro il modello tramite il training set
+        gnb.fit(train_X, train_Y)
+
         # creo il modello - Random Forest
         forest_clf = RandomForestClassifier()
 
-        # creo il modello - GridSearchCV
+        # creo il modello - GridSearchCV - Random Forest
         forest_grid_search = GridSearchCV(estimator=forest_clf, param_grid=param_grid,
                                           cv=StratifiedKFold(n_splits=5), n_jobs=-1, verbose=2)
 
         # addestro il modello tramite il training set
         forest_grid_search.fit(train_X, train_Y)
+
+        # creo il modello - Extra Trees
+        extra_clf = ExtraTreesClassifier()
+
+        # creo il modello - GridSearchCV - Extra Trees
+        extra_grid_search = GridSearchCV(estimator=extra_clf, param_grid=param_grid,
+                                         cv=StratifiedKFold(n_splits=5), n_jobs=-1, verbose=2)
+
+        # addestro il modello tramite il training set
+        extra_grid_search.fit(train_X, train_Y)
 
         print("---------------------------")
         print("---------------------------")
@@ -140,20 +159,85 @@ class Classifier:
 
         # visualizzo gli scores del test set
 
-        grid_prediction_test = forest_grid_search.predict(test_X)
-        print("evaluation Classification report:")
-        print(classification_report(test_Y, grid_prediction_test))
+        grid_predictionRF_test = forest_grid_search.predict(test_X)
+        print("Scores Random Forest: ")
+        accuracy = accuracy_score(test_Y, grid_predictionRF_test)
+        precision = precision_score(test_Y, grid_predictionRF_test, average='macro')
+        recall = recall_score(test_Y, grid_predictionRF_test, average='macro')
+        f1 = f1_score(test_Y, grid_predictionRF_test, average='macro')
 
-        print("------------------------")
-        print("Precision: {}".format(precision_score(test_Y, grid_prediction_test, average=None)))
+        print("Accuracy:", accuracy)
+        print("Precision:", precision)
+        print("Recall:", recall)
+        print("f1 measure:", f1)
+        print("\n\n")
 
-        print("------------------------")
-        print("Recall: {}".format(recall_score(test_Y, grid_prediction_test, average=None)))
+        print("Best parameters for Random Forest model: ")
+        print(forest_grid_search.best_params_)
 
-        print("------------------------")
-        print("F1-measure: {}".format(f1_score(test_Y, grid_prediction_test, average=None)))
+        print("Classification report Random Forest model: ")
+        print(classification_report(test_Y, grid_predictionRF_test))
 
-        return forest_grid_search
+        print("---------------")
+
+        grid_prediction_test = extra_grid_search.predict(test_X)
+        print("Scores Extra Trees: ")
+        accuracy = accuracy_score(test_Y, grid_prediction_test)
+        precision = precision_score(test_Y, grid_prediction_test, average='macro')
+        recall = recall_score(test_Y, grid_prediction_test, average='macro')
+        f1 = f1_score(test_Y, grid_prediction_test, average='macro')
+
+        print("Accuracy:", accuracy)
+        print("Precision:", precision)
+        print("Recall:", recall)
+        print("f1 measure:", f1)
+        print("\n\n")
+
+        print("Best parameters for Extra Tree model: ")
+        print(extra_grid_search.best_params_)
+
+        print("---------------")
+
+        gnb_prediction_test = gnb.predict(test_X)
+        print("Scores GaussianNB: ")
+        accuracy = accuracy_score(test_Y, gnb_prediction_test)
+        precision = precision_score(test_Y, gnb_prediction_test, average='macro')
+        recall = recall_score(test_Y, gnb_prediction_test, average='macro')
+        f1 = f1_score(test_Y, gnb_prediction_test, average='macro')
+
+        print("Accuracy:", accuracy)
+        print("Precision:", precision)
+        print("Recall:", recall)
+        print("f1 measure:", f1)
+        print("\n\n")
+
+        print("---------------")
+        print("---------------")
+
+        print("Display confusion matrix for best model:")
+        self.display_cm(test_Y, grid_predictionRF_test)
+
+        return forest_grid_search  # best model
+
+    def display_cm(self, test_Y, clf_prediction):
+        # Plot non-normalized confusion matrix
+        target_labels = np.unique(self.Y)
+
+        matrix = confusion_matrix(test_Y, clf_prediction)
+        plt.figure(figsize=(6, 4))
+        sns.heatmap(matrix,
+                    cmap='coolwarm',
+                    linecolor='white',
+                    linewidths=1,
+                    xticklabels=[target for target in target_labels],
+                    yticklabels=[target for target in target_labels],
+                    annot=True,
+                    fmt='d')
+        plt.title('Confusion Matrix RFC')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.show()
+
 
     # metodo che permette di visualizzare predizioni di una serie di immagini
     def testing_images(self, forest_grid_search):
@@ -198,6 +282,6 @@ if __name__ == '__main__':
 
     print('--------------------')
 
-    print("Test some images...")
+    print("Test some images... with the best model used!")
     classifier.testing_images(clf)
     print("Test completed! Let's visualize the image predictions!")

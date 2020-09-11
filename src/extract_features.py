@@ -1,7 +1,7 @@
 import cv2 as cv
 import mahotas
 
-import random
+from pylab import *
 
 import src.data_augmentation
 
@@ -81,7 +81,6 @@ def grubcat(image_):
 
     return img
 
-
 # non usato
 def fd_edge_detector(image_):
     image_ = cv.resize(image_, (500, 500))
@@ -103,20 +102,10 @@ def fd_edge_detector(image_):
 
     grad = cv.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
 
-    return fd_hog(grad, 16)
+    histogram = hist(grad.flatten(), 128)
+    hist_ = np.hstack(histogram)
 
-
-# non usato
-def contours(image_):
-    imgray = cv.cvtColor(image_, cv.COLOR_BGR2GRAY)
-
-    ret, thresh = cv.threshold(imgray, 127, 255, 0)
-    _, contours_, _ = cv.findContours(thresh, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-
-    new_image = cv.drawContours(image_, contours_, -1, (0, 255, 0), 3, )
-
-    return new_image
-
+    return hist_.flatten()
 
 # funzione per l'estrazione delle features, chiamato nel file 'classifier.py'
 def extract(img):
@@ -132,78 +121,6 @@ def extract(img):
     img_hori_flip = src.data_augmentation.horizontal_flip(img)
     features_horizontal_hog = fd_hog(img_hori_flip, 16)
 
-    glob_features_b = np.hstack([f_moments, f_haralick, f_histogram, f_hog,
-                                 features_vertical_hog, features_horizontal_hog])
+    glob_features_b = np.hstack([f_moments, f_haralick, f_histogram,
+                                 features_vertical_hog, features_horizontal_hog, f_hog])
     return glob_features_b
-
-# cluster di keypoints di un'immagine trovati tramite il metodo SIFT
-# non usati
-def euclDistance(vector1, vector2):
-    return sum(abs(vector2 - vector1))
-
-
-def initCentroids(dataSet, k):
-    numSamples, dim = dataSet.shape
-    centroids = np.zeros((k + 1, dim))
-    s = set()
-    for i in range(1, k + 1):
-        while True:
-            index = int(random.uniform(0, numSamples))
-            if index not in s:
-                s.add(index)
-                break
-        # index = int(random.uniform(0, 2))
-        # print "random index:"
-        # print index
-        centroids[i, :] = dataSet[index, :]
-    return centroids
-
-
-def kmeans(img, k):
-    # 　inizializzo un oggetto SIFT
-    sift = cv.xfeatures2d.SIFT_create()
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    kp, dataSet = sift.detectAndCompute(gray, None)
-    pic = cv.drawKeypoints(gray, kp, img)
-
-    numSamples = dataSet.shape[0]
-    clusterAssment = np.mat(np.zeros((numSamples, 2)))
-    for i in range(numSamples):
-        clusterAssment[i, 0] = -1
-    clusterChanged = True
-    centroids = initCentroids(dataSet, k)
-
-    while clusterChanged:
-        clusterChanged = False
-        for i in range(numSamples):
-            minDist = 100000.0
-            minIndex = 0
-            for j in range(1, k + 1):
-                distance = euclDistance(centroids[j, :], dataSet[i, :])
-                if distance < minDist:
-                    minDist = distance
-                    minIndex = j
-            if clusterAssment[i, 0] != minIndex:
-                clusterChanged = True
-                clusterAssment[i, :] = minIndex, minDist
-            else:
-                clusterAssment[i, 1] = minDist
-
-        for j in range(1, k + 1):
-            pointsInCluster = dataSet[np.nonzero(clusterAssment[:, 0].A == j)[0]]
-            centroids[j, :] = np.mean(pointsInCluster, axis=0)
-
-    return centroids.flatten(), clusterAssment
-
-
-def cluster_centroid(image_):
-    k = 50
-    centroids, clusterAssment = kmeans(image_, k)
-    result = np.zeros(k, dtype=np.int16)
-    for i in range(clusterAssment.shape[0]):
-        categories = int(clusterAssment[i, 0] - 1)
-        # print categories
-        result[[categories]] += 1
-
-    return result

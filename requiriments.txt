@@ -1,0 +1,7 @@
+- sklearn
+- open-cv
+- mahotas
+- h5py
+- dask
+- tqdm
+- skimage
